@@ -2,7 +2,9 @@
 Scanner for Claude Code project data in ~/.claude/.
 """
 
+import collections
 import json
+import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -10,8 +12,91 @@ from claudepath.encoder import encode_path
 
 
 def find_claude_dir() -> Path:
-    """Return the ~/.claude directory path."""
+    """Return the Claude Code data directory.
+
+    That is ~/.claude, or $CLAUDE_CONFIG_DIR when it is set -- Claude Code
+    keeps projects/ and history.jsonl there in that case.
+    """
+    env = os.environ.get("CLAUDE_CONFIG_DIR", "").strip()
+    if env:
+        return Path(env)
     return Path.home() / ".claude"
+
+
+def find_claude_json(claude_dir: Path) -> Path:
+    """Return the path of Claude Code's global config (~/.claude.json).
+
+    With $CLAUDE_CONFIG_DIR set, Claude Code keeps it inside that directory;
+    otherwise it sits next to ~/.claude, in the home directory.
+    """
+    inside = claude_dir / ".claude.json"
+    env = os.environ.get("CLAUDE_CONFIG_DIR", "").strip()
+    if (env and Path(env) == claude_dir) or inside.exists():
+        return inside
+    return claude_dir.parent / ".claude.json"
+
+
+def read_first_cwd(jsonl_file: Path, max_lines: int = 500) -> Optional[str]:
+    """Return the first top-level cwd recorded in a session file, or None.
+
+    Faster than _read_cwd_from_jsonl on large sessions: lines are not parsed,
+    the field is located directly (see updaters.find_top_level_string).
+    """
+    from claudepath.updaters import find_top_level_string
+
+    try:
+        with open(jsonl_file, "rb") as f:
+            for i, line in enumerate(f):
+                if i >= max_lines:
+                    break
+                if b'"cwd"' not in line:
+                    continue
+                found = find_top_level_string(line, "cwd")
+                if found and isinstance(found[2], str) and found[2]:
+                    return found[2]
+    except OSError:
+        pass
+    return None
+
+
+def project_paths_in_dir(project_dir: Path, limit: Optional[int] = None) -> List[str]:
+    """Return the project path(s) a ~/.claude/projects/ directory belongs to.
+
+    Reads sessions-index.json (older Claude Code versions) and the first cwd of
+    each top-level session file, newest first; `limit` caps how many session
+    files are read. More than one path means several folders share the slug.
+    Most frequent first.
+    """
+    counts: "collections.Counter[str]" = collections.Counter()
+    index_file = project_dir / "sessions-index.json"
+    if index_file.exists():
+        try:
+            data = json.loads(index_file.read_text(encoding="utf-8"))
+            original = data.get("originalPath")
+            if isinstance(original, str) and original:
+                counts[original] += 1
+            for e in data.get("entries", []):
+                pp = e.get("projectPath")
+                if isinstance(pp, str) and pp:
+                    counts[pp] += 1
+        except (json.JSONDecodeError, OSError, AttributeError):
+            pass
+
+    try:
+        sessions = sorted(
+            project_dir.glob("*.jsonl"), key=lambda f: f.stat().st_mtime, reverse=True
+        )
+    except OSError:
+        sessions = []
+    read = 0
+    for f in sessions:
+        if limit is not None and read >= limit:
+            break
+        cwd = read_first_cwd(f)
+        if cwd:
+            counts[cwd] += 1
+            read += 1
+    return [p for p, _ in counts.most_common()]
 
 
 def find_project_dir(claude_dir: Path, project_path: str) -> Optional[Path]:

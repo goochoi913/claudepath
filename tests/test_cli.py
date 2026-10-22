@@ -363,3 +363,47 @@ def test_cmd_list_summary_mixed(tmp_path, monkeypatch, capsys):
     cmd_list([])
     captured = capsys.readouterr()
     assert "2 projects (1 on disk, 1 orphaned)" in captured.out
+
+
+# ─── Automatic-mode commands ─────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("command", ["sync", "install", "uninstall", "scan", "status", "auto"])
+def test_main_new_commands_have_help(monkeypatch, capsys, command):
+    monkeypatch.setattr(sys, "argv", ["claudepath", command, "--help"])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+    assert f"claudepath {command}" in capsys.readouterr().out
+
+
+def test_main_help_lists_automatic_mode(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["claudepath", "help"])
+    main()
+    out = capsys.readouterr().out
+    assert "AUTOMATIC MODE" in out and "install" in out and "scan" in out
+
+
+def test_entry_point_dispatches_auto_without_loading_cli(monkeypatch, tmp_path):
+    import subprocess
+
+    code = (
+        "import sys; sys.argv = ['claudepath', 'auto', '--claude-dir', sys.argv[1]]\n"
+        "from claudepath import entry\n"
+        "try:\n    entry.main()\nexcept SystemExit as e:\n    code = e.code\n"
+        "assert 'claudepath.cli' not in sys.modules and 'urllib.request' not in sys.modules\n"
+        "print(code)\n"
+    )
+    out = subprocess.run([sys.executable, "-c", code, str(tmp_path / "missing")],
+                         capture_output=True, text=True, cwd=tmp_path)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "0" and out.stderr == ""
+
+
+def test_new_command_rejects_unknown_option(capsys):
+    from claudepath.cli import cmd_sync
+
+    with pytest.raises(SystemExit) as exc_info:
+        cmd_sync(["--frobnicate"])
+    assert exc_info.value.code == 1
+    assert "Unknown option" in capsys.readouterr().err

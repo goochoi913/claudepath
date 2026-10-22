@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "claudepath"
-version = "1.1.2"
+version = "1.2.0"
 description = "Move or rename Claude Code projects without losing session history and context"
 readme = "README.md"
 license = { text = "MIT" }
@@ -33,7 +33,7 @@ classifiers = [
 dev = ["pytest", "pytest-cov"]
 
 [project.scripts]
-claudepath = "claudepath.cli:main"
+claudepath = "claudepath.entry:main"
 
 [project.urls]
 Homepage = "https://github.com/Mahiler1909/claudepath"

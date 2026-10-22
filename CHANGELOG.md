@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.2.0] - Unreleased
+
+### Added
+- **Automatic mode** — sessions follow project folders you move or rename in Finder or a shell, with no command to run:
+  - `claudepath install` / `uninstall`: a marked block in `~/.zshrc` or `~/.bashrc` that runs `claudepath auto` before every `claude` launch. An existing `claude` function or alias keeps working (it runs after `auto`); re-sourcing is safe; asks before writing and backs the file up
+  - `claudepath auto`: migrates a moved folder's data before Claude Code starts. Strong match (device+inode confirmed by birth time or git root commit) migrates silently; weak match (same git root commit after a cross-volume move) or an unconfirmed inode asks `[y/N]` on a TTY only and remembers a "no"; anything else does nothing. Silent unless it acts, ~50 ms when nothing moved, never blocks the launch
+  - `claudepath sync`: records project identities in `~/.claude/claudepath/registry.json`
+  - `claudepath scan <root>`: rescues already-orphaned sessions by registry inode, else by a unique same-name folder (confirmed first)
+  - `claudepath status`: tracked projects, orphans, shell hook state, and a check of the slug encoding against the real `~/.claude/projects` names
+- Migration engine for the automatic mode: renames or merges (never overwriting) the project directory **and those of subfolder projects**; rewrites only the top-level `cwd` of session lines, leaving all other bytes and file mtimes untouched; updates `sessions-index.json`, the `project` field of `history.jsonl`, and `~/.claude.json` (`projects` keys with old values winning on merge, plus `githubRepoPaths`) atomically and under Claude Code's own file locks; defers while a Claude session is still running in the moved folder
+- Per-file backup journal in `~/.claude/claudepath/backups/{timestamp}/` with automatic rollback on failure, on SIGTERM/SIGHUP, and (for a crash) at the next launch. `claudepath restore` undoes an automatic migration while keeping session lines, prompts and settings written since, and `auto` does not redo it
+- `--dry-run` for `restore` (it used to ignore unknown flags and go ahead)
+
+### Changed
+- `CLAUDE_CONFIG_DIR` is honoured when locating Claude Code's data, as Claude Code does
+- `sessions-index.json` and `usage-data` files are written atomically, and a lone surrogate (e.g. a truncated emoji) no longer makes the write fail
+- The console entry point dispatches `claudepath auto` before loading the full CLI, and the PyPI update check imports `urllib` lazily, so the pre-launch hook starts quickly
+- `mv` and `remap` behave exactly as before
+
 ## [1.1.2] - 2026-07-03
 
 ### Fixed
